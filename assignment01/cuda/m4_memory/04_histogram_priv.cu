@@ -18,10 +18,67 @@ __global__ void histogram_naive(const unsigned char *data, unsigned int *hist,
         atomicAdd(&hist[data[i]], 1u);
     }
 }
-
+/*
 __global__ void histogram_priv(const unsigned char *data, unsigned int *hist,
                                int n) {
-    // TODO：从这里开始写（shared memory 私有化版本）
+    // TODO：从这里开始写（shared memory 私有化版）
+    __shared__ int s_hist[256];
+    for(int i=threadIdx.x;i<256;i+=blockDim.x) s_hist[i]=0;
+    __syncthreads();
+    int i=blockIdx.x*blockDim.x+threadIdx.x;
+    int stride=blockDim.x*gridDim.x;
+    for(;i<n;i+=stride) atomicAdd(&s_hist[data[i]],1u);
+    __syncthreads();
+    for(int j=threadIdx.x;j<256;j+=blockDim.x) atomicAdd(&hist[j],s_hist[j]);
+
+}
+*/
+__global__ void histogram_priv(const unsigned char *data, unsigned int *hist,
+                                     int n) {
+    // 8 个 warp，每个 warp 独占 256 bins 的 shared memory 区域
+    __shared__ unsigned int warp_hists[8][BINS];
+
+    int tid = threadIdx.x;
+    int warp_id = tid / 32;
+    int lane = tid % 32;
+
+    unsigned int *my_hist = warp_hists[warp_id];  // 这个 warp 的私有区域
+
+    // Step 1: 清零自己 warp 的区域
+    for (int j = lane; j < BINS; j += 32)
+        my_hist[j] = 0;
+    __syncthreads();
+
+    // Step 2: 向量化读取 + warp 私有化 atomic
+    int i = blockIdx.x * blockDim.x + tid;
+    int stride = blockDim.x * gridDim.x;
+
+    for (; i + 3 * stride < n; i += 4 * stride) {
+    unsigned char v0 = data[i];
+    unsigned char v1 = data[i + stride];
+    unsigned char v2 = data[i + 2 * stride];
+    unsigned char v3 = data[i + 3 * stride];
+    atomicAdd(&my_hist[v0], 1u);
+    atomicAdd(&my_hist[v1], 1u);
+    atomicAdd(&my_hist[v2], 1u);
+    atomicAdd(&my_hist[v3], 1u);
+}
+
+    // 尾部不足 16 个元素的收尾
+    for (; i < n; i += stride)
+        atomicAdd(&my_hist[data[i]], 1u);
+
+    __syncthreads();
+
+    // Step 3: 汇合——8 个 warp 的私有直方图合并到 global
+    for (int j = tid; j < BINS; j += blockDim.x) {
+        unsigned int sum = 0;
+        #pragma unroll
+        for (int w = 0; w < 8; w++)
+            sum += warp_hists[w][j];
+        if (sum > 0)
+            atomicAdd(&hist[j], sum);
+    }
 }
 
 // ---------------- 以下是判测与计时，不要修改 ----------------

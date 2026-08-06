@@ -4,14 +4,18 @@
 #include "common.h"
 
 __global__ void histogram(const unsigned char *data, unsigned int *hist, int n) {
+    __shared__ int s_hist[256];
+    for (int j = threadIdx.x; j < 256; j += blockDim.x) s_hist[j] = 0;
+    __syncthreads();
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int stride = blockDim.x * gridDim.x;
     for (; i < n; i += stride) {
         unsigned char v = data[i];
-        // ====== 空 1：往 hist[v] 里加 1
-        //         该用哪个原子操作？ ======
-        /* 填这里 */;
+        atomicAdd(&s_hist[v], 1u);
     }
+    __syncthreads();
+    for (int j = threadIdx.x; j < 256; j += blockDim.x)
+            atomicAdd(&hist[j], s_hist[j]);
 }
 
 int main() {

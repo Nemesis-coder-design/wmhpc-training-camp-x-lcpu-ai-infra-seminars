@@ -1,0 +1,8 @@
+GPU 型号            : NVIDIA L20
+compute capability  : 8.9
+SM 数量             : 92
+warp 大小           : 32
+shared mem / block  : 49152
+max threads / SM    : 1536
+global mem          : 47666757632
+max threads / block : 1024

@@ -19,5 +19,72 @@ contract: 实现 run(program) -> (regs, cycles)
 """
 
 
+class SIMTsimulator:
+    def __init__(self,num_lanes=32):
+        self.num_lanes=num_lanes
+        self.regs=list(range(num_lanes))
+        self.instructions=[]
+        self.cycles=0
+
+    def load_pg(self,instructions):
+        self.instructions=instructions
+
+    def run(self):
+        self.exec(self.instructions,[True]*self.num_lanes)
+        return self.regs,self.cycles
+
+    def exec(self,instructions,mask):
+        if not any(mask):
+            return
+
+        for instruction in instructions:
+            op=instruction[0]
+
+            if op=='add':
+                k=instruction[1]
+                for i in range(self.num_lanes):
+                    if mask[i]:
+                        self.regs[i]+=k
+                self.cycles+=1
+
+            elif op=='mul':
+                k=instruction[1]
+                for i in range(self.num_lanes):
+                    if mask[i]:
+                        self.regs[i]*=k
+                self.cycles+=1
+
+            elif op=='if_lt':
+                t=instruction[1]
+                then_prog=instruction[2]
+                else_prog=instruction[3]
+                true_mask=[]
+                false_mask=[]
+
+                for i in range(self.num_lanes):
+                    if mask[i]:
+                        if self.regs[i]<t:
+                            true_mask.append(True)
+                            false_mask.append(False)
+                        else:
+                            true_mask.append(False)
+                            false_mask.append(True)
+                    else:
+                        true_mask.append(False)
+                        false_mask.append(False)
+
+                if any(true_mask):
+                    self.exec(then_prog,true_mask)
+
+                if any(false_mask):
+                    self.exec(else_prog,false_mask)
+
+            else:
+                raise ValueError('unknown instruction: '+op)
+
+
 def run(program):
-    raise NotImplementedError("从这里开始写")
+    simulator=SIMTsimulator()
+    simulator.load_pg(program)
+    return simulator.run()
+
